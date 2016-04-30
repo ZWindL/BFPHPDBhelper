@@ -79,6 +79,7 @@ class DBHelper {
             throw $e;
         }
     }
+    //TODO: 让 where 也支持 prepare
     /**
      * 将数组自动转换为 where 子句
      * @param array $const
@@ -96,7 +97,8 @@ class DBHelper {
                 if($value == null) {
                     $const_str .= ($key . 'is NULL');
                 } else {
-                    $const_str .= ($key . '=' . $value);
+                    // 无论是否为字符串，统一加单引号，让数据库自己处理类型转换
+                    $const_str .= ($key . "='" . $value ."'");
                 }
             }
         }
@@ -183,15 +185,61 @@ class DBHelper {
     private function is_multiple_arr($arr){
         return count($arr) !== count($arr, COUNT_RECURSIVE);
     }
-	//FIXME: should test if it's multiple array
+
     private function prepare_prepare($table, $arr, $insert_or_update, $prepare=true){
         if (!$prepare) {
             // 如果不需要 prepare 语句，则返回一个插入语句
             // 或是一个不带 where 子句的 update 语句
             switch ($insert_or_update) {
                 case 'insert':
+					$insert_str = 'INSERT INTO '.$table;
+                    $key_str = ''; $value_str = '';
+
+                    // 检测是否为多维数组
+                    if($this->is_multiple_arr($arr)) {
+                        // 取第一行的 keys 并 implode
+                        $key_str = implode(',', array_keys($arr[0])).' ';
+                        // 将每个次级数组取出
+                        foreach ($arr as $item)
+                            $value_str .= ("VALUES('".implode("','", array_values($item)) . "'),");
+                        $value_str = substr($value_str, 0, -1);
+                    }
+                    // 检测是否为关系数组
+                    // 一维关系型数组，包含keys 和 values
+                    else if($this->is_assoc($arr)) {
+                        $key_str = implode(',', array_keys($arr)).' ';
+                        $value_str = " VALUES('".implode("','", $arr)."')";
+                    }
+                    // 一维关非系型数组，只有值列表
+                    else {
+                        $value_str = ' VALUES('.implode("','",$arr)."')";
+                    }
+                    $insert_str .= ($key_str.' '.$value_str);
+                    // debug
+                    // echo $insert_str;
+                    // debug
+                    return $insert_str;
                     break;
                 case 'update':
+                    $update_str = 'UPDATE '.$table.' SET ';
+                    // 判断是否为多维数组，如果是多维数组抛出异常
+                    if ($this->is_multiple_arr($arr)) {
+                        $this->throw_exception("update string can't accept a multiple array");
+                        return false;
+                    }
+                    if (!$this->is_assoc($arr)) {
+                        $this->throw_exception('update need an assoc array');
+                        return false;
+                    }
+                    $set_str = '';
+                    foreach ($arr as $key => $value)
+                        $set_str .= ($key."='$value',");
+                    $set_str = substr($set_str, 0, -1);
+                    $update_str .= $set_str;
+                    //debug
+                    //echo $update_str;
+                    //debug
+                    return $update_str;
                     break;
             }
         } else {
@@ -280,6 +328,7 @@ class DBHelper {
      */
 	function Insert($table, $value_arr, $value_type_str, $prepare=true) {
         //FIXME: 这个函数需要重构
+        //TODO: 有了 prepare_prepare 只需要绑定参数就可以了
 		$insert_str = 'INSERT INTO '.$table;
 		if($this->is_assoc($value_arr))
 			//prepare params
