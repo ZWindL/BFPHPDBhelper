@@ -79,7 +79,76 @@ class DBHelper {
             throw $e;
         }
     }
+
+	// 来自 php manual 的一个方法
+	function mysqli_prepared_query($sql,$typeDef=false,$params=false){
+		if($stmt = $this->mysqli->prepare($sql)){
+			if(count($params) == count($params,1)){
+				$params = array($params);
+				$multiQuery = FALSE;
+			} else {
+				$multiQuery = TRUE;
+			}
+
+			if($typeDef){
+				$bindParams = array();
+				$bindParamsReferences = array();
+				$bindParams = array_pad($bindParams,(count($params,1)-count($params))/count($params),"");
+				foreach($bindParams as $key => $value){
+					$bindParamsReferences[$key] = &$bindParams[$key];
+				}
+				array_unshift($bindParamsReferences,$typeDef);
+				$bindParamsMethod = new ReflectionMethod('mysqli_stmt', 'bind_param');
+				$bindParamsMethod->invokeArgs($stmt,$bindParamsReferences);
+			}
+
+			$result = array();
+			foreach($params as $queryKey => $query){
+				foreach($bindParams as $paramKey => $value){
+					$bindParams[$paramKey] = $query[$paramKey];
+				}
+				$queryResult = array();
+				if($stmt->execute()){
+					$resultMetaData = $stmt->result_metadata();
+					if($resultMetaData){
+						$stmtRow = array();
+						$rowReferences = array();
+						while ($field = $resultMetaData->fetch_field()) {
+							$rowReferences[] = &$stmtRow[$field->name];
+						}
+						mysqli_free_result($resultMetaData);
+						$bindResultMethod = new ReflectionMethod('mysqli_stmt', 'bind_result');
+						$bindResultMethod->invokeArgs($stmt, $rowReferences);
+						while($stmt->fetch()){
+							$row = array();
+							foreach($stmtRow as $key => $value){
+								$row[$key] = $value;
+							}
+							$queryResult[] = $row;
+						}
+						$stmt->free_result();
+					} else {
+						$queryResult[] = $stmt->affected_rows;
+					}
+				} else {
+					$queryResult[] = FALSE;
+				}
+				$result[$queryKey] = $queryResult;
+			}
+			$stmt->close();
+		} else {
+			$result = FALSE;
+		}
+
+		if($multiQuery){
+			return $result;
+		} else {
+			return $result[0];
+		}
+	}
+
     //TODO: 让 where 也支持 prepare
+	//不过好像没什么必要
     /**
      * 将数组自动转换为 where 子句
      * @param array $const
@@ -186,6 +255,27 @@ class DBHelper {
         return count($arr) !== count($arr, COUNT_RECURSIVE);
     }
 
+	/**
+	 * 根据少量信息生成 prepare 语句
+	 * @param string $table 目标表的名称
+	 * @param array $arr 包含插入数据的数组，如果执行多次查询请使用多维数组，执行多次查询只需要在多维数组的第一个子数组中显示写出键名
+	 * ，其他子数组只需要 count 和第一个子数组相同即可，无需包含键名
+	 * @param string $insert_or_update 想要执行的操作，insert 或是 update
+	 * @param bool $prepare 是否使用 prepare, 默认为 true
+	 * @return array|string 如果不使用 prepare 返回 string(insert 为完整的 insert 语句，update 仅包含 update 部分不包含 where
+	 * 子句) 如果使用 prepare 则返回包含 3 个元素的数组，结构如下
+	 * [
+	 * 		insert / update 值的数量 $count,
+	 * 		insert / update 的 prepare 语句 (update 不包含 where 子句)
+	 * 		value array(多维) [
+	 * 			array(v11, v12, v13...),
+	 * 			array(v21, v22, v23...),
+	 * 			array(v31, v32, v33...),
+	 * 			...
+	 * 		]
+	 * ]
+	 * @throws Exception
+	 */
     private function prepare_prepare($table, $arr, $insert_or_update, $prepare=true){
         if (!$prepare) {
             // 如果不需要 prepare 语句，则返回一个插入语句
@@ -241,20 +331,11 @@ class DBHelper {
                     //debug
                     return $update_str;
                     break;
+				default:
+					$this->throw_exception('unknown parameter');
+					return false;
             }
         } else {
-            // 如果是 prepare 语句，返回一个数组
-            // 数组的结构
-            // [
-            //      插入 / 修改 值的数量 $count
-            //      插入 / 修改 prepare 语句 (修改语句不带有 where 子句)
-            //      值数组 (多维)
-            //          [
-            //              array(v11, v12, v13),
-            //              array(v21, v22, v23),
-            //              ...
-            //          ]
-            // ]
             switch ($insert_or_update) {
                 case 'insert':
                     if ($this->is_multiple_arr($arr)) {
@@ -265,7 +346,7 @@ class DBHelper {
                         }
                     } else {
                         $data_arr = $arr;
-                        $return_arr = array($arr);
+                        $return_arr = array(array_values($arr));
                     }
                     $prepare_str = 'INSERT INTO '.$table;
                     $count = count($data_arr);
@@ -281,9 +362,9 @@ class DBHelper {
                     $prepare_str .= ($key_str.$value_str);
 
                     return array(
-                        $count,
-                        $prepare_str,
-                        $return_arr
+                        'count'=>$count,
+                        'prepare'=>$prepare_str,
+                        'data'=>$return_arr
                     );
                     break;
                 case 'update':
@@ -302,17 +383,44 @@ class DBHelper {
                         array_push($return_arr, $value);
                     }
                     return array(
-                        $count,
-                        $update_str.$set_str,
-                        $return_arr
+                        'count'=>$count,
+                        'prepare'=>$update_str.$set_str,
+                        'data'=>$return_arr
                     );
                     break;
                 default:
                     $this->throw_exception('error occurred in $insert_or_update parameter');
+					return false;
             }
         }
-
     }
+
+	private function binding_and_execute($count, $prepare_str, $value_type_str, $data) {
+		$stmt = $this->mysqli->prepare($prepare_str);
+		if (!$stmt) {
+			$this->throw_exception('prepare error');
+			return false;
+		}
+		for ($i=0; $i<$count; $i++) {
+			if(!$stmt->bind_param(substr($value_type_str, $i, 1), ${'p'.$i})) {
+				$stmt->close();
+				$this->throw_exception('binding error');
+				return false;
+			}
+		}
+		foreach ($data as $row) {
+			for ($i=0; $i<$count; $i++){
+				${'p'.$i} = $row[$i];
+			}
+			if(!$stmt->execute()) {
+				$stmt->close();
+				$this->throw_exception('execute error');
+				return false;
+			}
+		}
+		$stmt->close();
+		return $this->mysqli->affected_rows;
+	}
     /**
      * 功能：向 $table 中插入一条或多条数据
      * 如果 $value_arr 是多维数组则代表需要插入多条数据
@@ -327,62 +435,37 @@ class DBHelper {
      * @return int 受影响的行数
      */
 	function Insert($table, $value_arr, $value_type_str, $prepare=true) {
-        //FIXME: 这个函数需要重构
-        //TODO: 有了 prepare_prepare 只需要绑定参数就可以了
-		$insert_str = 'INSERT INTO '.$table;
-		if($this->is_assoc($value_arr))
-			//prepare params
-			$params = '('.implode(',',array_keys($value_arr)).') ';
-		else
-			//not assoc params
-			$params = '';
-		$insert_str .= $params.' VALUES(';
-		if($prepare) {
-			//prepare values
-			$value_str = '';
-			$value_count = count($value_arr);
-			for ($i=0; $i<$value_count; $i++)
-				$value_str .= '?,';
-			$value_str = substr($value_str, 0, -1);
-			$value_str .= ')';
-			
-			$insert_str .= $value_str;
-			//debug
-			//echo $insert_str;
-			//debug
-			if(!($stmt = $this->mysqli->prepare($insert_str)))
-				$this->throw_exception($stmt->error);
-			//binding params
-			//each param is like 'p1', 'p2', 'p3'...
-			for ($i=0; $i<$value_count; $i++){
-				if(!($stmt->bind_param(substr($value_type_str,$i,1), ${'p'.$i})))
-					$this->throw_exception($stmt->error);
-			}
-			$index = 0;
-			foreach ($value_arr as $value) {
-				${'p'.$index} = $value;
-				$index ++;
-			}
-			if(!($stmt->execute()))
-				$this->throw_exception($stmt->error);
+		$res = $this->prepare_prepare($table, $value_arr, 'insert', $prepare);
+		if ($prepare) {
+			$count = $res['count'];
+			$prepare_str = $res['prepare'];
+			$data = $res['data'];
+			$affected = $this->binding_and_execute($count, $prepare_str, $value_type_str, $data);
+			return $affected;
 		} else {
-			$value_str = implode(',', array_values($value_arr));
-			$insert_str .= $value_str;
-			try {
-				$this->mysqli->query($insert_str);
-			} catch (Exception $e) {
-				throw $e;
-			}
+			$this->mysqli->query($res);
+			return $this->mysqli->affected_rows;
 		}
-        return $this->mysqli->affected_rows;
-		//debug
-			
-		//debug
 	}
 	
-	function Update() {
+	function Update($table, $value_arr, $value_type_str, $const=null, $filter_str=null, $prepare=true) {
+		$res = $this->prepare_prepare($table, $value_arr, 'update', $prepare);
+		$const_and_filter_str = $this->create_where_str($const, $filter_str);
+		if($prepare) {
+			$prepare_str = $res['prepare'].$const_and_filter_str;
+			$count = $res['count'];
+			$data = $res['data'];
+			$affected = $this->binding_and_execute($count, $prepare_str, $value_type_str, $data);
+			return $affected;
+		} else {
+			$this->mysqli->query($res);
+			return $this->mysqli->affected_rows;
+		}
 	}
 	
-	function Delete() {
+	function Delete($table, $const, $filter_str=null) {
+		$delete_str = "DELETE FROM `$table`".$this->create_where_str($const, $filter_str);
+		$this->mysqli->query($delete_str);
+		return $this->mysqli->affected_rows;
 	}
 }
