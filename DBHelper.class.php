@@ -85,7 +85,7 @@ class DBHelper {
      * @param string $filter_str
      * @return string
      */
-    private function where_2_str($const=null, $filter_str=null){
+    private function create_where_str($const=null, $filter_str=null){
         $const_str = "";
         if(isset($const)) {
             $const_str .= " WHERE ";
@@ -129,7 +129,7 @@ class DBHelper {
 			if (isset($search_field)) {
 				$search_field_str = implode(',',$search_field);
 			}
-			$const_and_filter_str = $this->where_2_str($const, $filter_str);
+			$const_and_filter_str = $this->create_where_str($const, $filter_str);
 			
 			$query_str .= ($search_field_str.' FROM '.$table_name.$const_and_filter_str);
 			
@@ -186,44 +186,84 @@ class DBHelper {
 	//FIXME: should test if it's multiple array
     private function prepare_prepare($table, $arr, $insert_or_update, $prepare=true){
         if (!$prepare) {
-            //do something!!!
-            //FIXME: 这里是不需要准备语句的地方
+            // 如果不需要 prepare 语句，则返回一个插入语句
+            // 或是一个不带 where 子句的 update 语句
+            switch ($insert_or_update) {
+                case 'insert':
+                    break;
+                case 'update':
+                    break;
+            }
+        } else {
+            // 如果是 prepare 语句，返回一个数组
+            // 数组的结构
+            // [
+            //      插入 / 修改 值的数量 $count
+            //      插入 / 修改 prepare 语句 (修改语句不带有 where 子句)
+            //      值数组 (多维)
+            //          [
+            //              array(v11, v12, v13),
+            //              array(v21, v22, v23),
+            //              ...
+            //          ]
+            // ]
+            switch ($insert_or_update) {
+                case 'insert':
+                    if ($this->is_multiple_arr($arr)) {
+                        $data_arr = $arr[0];
+                        $return_arr = array();
+                        foreach ($arr as $item){
+                            array_push($return_arr, array_values($item));
+                        }
+                    } else {
+                        $data_arr = $arr;
+                        $return_arr = array($arr);
+                    }
+                    $prepare_str = 'INSERT INTO '.$table;
+                    $count = count($data_arr);
+                    $value_str = ' VALUES(';
+                    for ($i=0; $i<$count; $i++)
+                        $value_str .= '?,';
+                    $value_str = substr($value_str, 0, -1);
+                    $value_str .= ')';
+
+                    $key_str = implode(',', array_keys($data_arr));
+                    $key_str = '('.$key_str.')';
+
+                    $prepare_str .= ($key_str.$value_str);
+
+                    return array(
+                        $count,
+                        $prepare_str,
+                        $return_arr
+                    );
+                    break;
+                case 'update':
+                    $update_str = 'UPDATE '.$table.' SET ';
+                    // 判断是否为多维数组，如果是多维数组抛出异常
+                    if ($this->is_multiple_arr($arr)) {
+                        $this->throw_exception("update string can't accept a multiple array");
+                        return false;
+                    }
+                    // 生成带有 '?' 的字符串
+                    // 在循环中顺便生成值 value array 和 count
+                    $set_str = ''; $count = 0; $return_arr=array();
+                    foreach ($arr as $key => $value) {
+                        $count ++;
+                        $set_str .= ($key.'=?,');
+                        array_push($return_arr, $value);
+                    }
+                    return array(
+                        $count,
+                        $update_str.$set_str,
+                        $return_arr
+                    );
+                    break;
+                default:
+                    $this->throw_exception('error occurred in $insert_or_update parameter');
+            }
         }
-        switch ($insert_or_update) {
-            case 'insert':
-                if ($this->is_multiple_arr($arr)) {
-                    $data_arr = $arr[0];
-                    $return_arr = $arr;
-                } else {
-                    $data_arr = $arr;
-                    $return_arr = array($arr);
-                }
-                $prepare_str = 'INSERT INTO '.$table;
-                $count = count($data_arr);
-                $value_str = ' VALUES(';
-                for ($i=0; $i<$count; $i++)
-                    $value_str .= '?,';
-                $value_str = substr($value_str, 0, -1);
-                $value_str .= ')';
 
-                $key_str = implode(',', array_keys($data_arr));
-                $key_str = '('.$key_str.')';
-
-                $prepare_str .= ($key_str.$value_str);
-
-                return array(
-                    $count,
-                    $prepare_str,
-                    $return_arr
-                );
-                break;
-            case 'update':
-                //FIXME: 更新语句的生成在这里
-                $update_str = 'UPDATE '.$table;
-                break;
-            default:
-                $this->throw_exception('error occurred in $insert_or_update');
-        }
     }
     /**
      * 功能：向 $table 中插入一条或多条数据
