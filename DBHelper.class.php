@@ -81,7 +81,7 @@ class DBHelper {
     }
 
 	// 来自 php manual 的一个方法
-	function mysqli_prepared_query($sql,$typeDef=false,$params=false){
+	public function Prepared_query_compex($sql,$typeDef=false,$params=false){
 		if($stmt = $this->mysqli->prepare($sql)){
 			if(count($params) == count($params,1)){
 				$params = array($params);
@@ -402,6 +402,8 @@ class DBHelper {
 			return false;
 		}
 		for ($i=0; $i<$count; $i++) {
+            //FIXME: bind_param 不能一次只绑定一个变量
+			//TODO:这里要用到反射
 			if(!$stmt->bind_param(substr($value_type_str, $i, 1), ${'p'.$i})) {
 				$stmt->close();
 				$this->throw_exception('binding error');
