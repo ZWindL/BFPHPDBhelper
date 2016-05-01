@@ -1,6 +1,24 @@
 <?php
+
+/**
+ * Class DBHelper
+ */
 class DBHelper {
+    /**
+     * @var mysqli mysqli|null mysqli object
+     */
 	private $mysqli = NULL;
+    /**
+     * @var string null|string 保存数据库信息的 json 文件
+     * 格式如下
+     * {
+     *      "hostname":"your_host_name",
+     *      "username":"your_mysql_username",
+     *      "password":"your_mysqli_password",
+     *      "database":"optional database name, you also can use method Change_db to choose database.
+     *                                          or just give parameter $dbname a value;
+     * }
+     */
     private $dbinfo_json_file;
 
 	private function throw_exception($exception_str) {
@@ -166,7 +184,7 @@ class DBHelper {
                 if($value == null) {
                     $const_str .= ($key . 'is NULL');
                 } else {
-                    // 无论是否为字符串，统一加单引号，让数据库自己处理类型转换
+                    //NOTE: 无论是否为字符串，统一加单引号，让数据库自己处理类型转换
                     $const_str .= ($key . "='" . $value ."'");
                 }
             }
@@ -192,6 +210,17 @@ class DBHelper {
 	// Using a prepared statement is not always the most efficient way of executing a statement.
 	// A prepared statement executed only once causes more client-server round-trips than a non-prepared statement.
 	// This is why the SELECT is not run as a prepared statement above.
+	// 根据以上，不建议在 select 语句中使用 prepare
+    /**
+     * 根据给定条件执行 select, 如果只给出表名则执行 'SELECT * FROM $table_name
+     * 返回一个 mysqli_result 变量
+     * @param string $table_name
+     * @param null|array $search_field 查询的字段名称
+     * @param null|array $const where 子句中的条件，关系数组形式，一个键值对就是一个条件
+     * @param null|string $filter_str 其他过滤选项，例如 SORT BY
+     * @return bool|mysqli_result 返回一个 mysqli_result 类型的变量
+     * @throws Exception
+     */
 	function Select($table_name, $search_field=null, $const=null, $filter_str=null) {
 		try {
 			$query_str = "SELECT ";
@@ -212,6 +241,17 @@ class DBHelper {
 		}
 		return $this->mysqli->query($query_str);
 	}
+
+    /**
+     * 根据给定条件执行 select, 如果只给出表名则执行 'SELECT * FROM $table_name
+     * 以数组形式返回结果
+     * @param string $table_name
+     * @param null|array $search_field 查询的字段名称
+     * @param null|array $const where 子句中的条件，关系数组形式，一个键值对就是一个条件
+     * @param null|string $filter_str 其他过滤选项，例如 SORT BY
+     * @return array 返回一个关系型数组，键名即字段名称
+     * @throws Exception
+     */
 	function Select_assoc($table_name, $search_field=null, $const=null, $filter_str=null) {
 		try {
 			$res = $this->Select($table_name, $search_field, $const, $filter_str);
@@ -220,7 +260,13 @@ class DBHelper {
 		}
 		return $this->result_2_assoc($res);
 	}
-	
+
+    /**
+     * 非 prepare 直接执行 sql_str
+     * @param string $sql_str
+     * @return bool|mysqli_result
+     * @throws Exception
+     */
 	function Query_complex($sql_str) {
 		try {
 			$res = $this->mysqli->query($sql_str);
@@ -336,8 +382,10 @@ class DBHelper {
 					return false;
             }
         } else {
+			// 使用 prepare
             switch ($insert_or_update) {
                 case 'insert':
+					// 检测是否为多维数组，如果是多维数组，包含 key 的便是第一个子数组
                     if ($this->is_multiple_arr($arr)) {
                         $data_arr = $arr[0];
                         $return_arr = array();
@@ -395,32 +443,44 @@ class DBHelper {
         }
     }
 
+    /**
+     * 绑定并执行 prepare 语句，返回受影响的行数
+     * @param integer $count 需要 execute 的内容的字段数量(换句话说，就是 '?' 的数量);
+     * @param string $prepare_str
+     * @param string $value_type_str 绑定变量时需要的类型字符串
+     * @param array $data 包含值的数组(多维普通数组，每一个子数组只需要包含要插入的值即可)
+     * @return int 返回受影响的行数
+     * @throws Exception
+     */
 	private function binding_and_execute($count, $prepare_str, $value_type_str, $data) {
 		$stmt = $this->mysqli->prepare($prepare_str);
+        //debug
+        //print_r($stmt);
 		if (!$stmt) {
 			$this->throw_exception('prepare error');
 			return false;
 		}
         $key_arr = array($value_type_str);
 		for ($i=0; $i<$count; $i++) {
+            // bind_params() 只接收引用类型
             $key_arr[] = &${'p'.$i};
-            //NOTE: bind_param 不能一次只绑定一个变量
-			//NOTE: 所以这里要用到反射
 		}
+        //NOTE: bind_param 不能一次只绑定一个变量
+        //NOTE: 所以这里要用到反射
         $bind_params = new ReflectionMethod('mysqli_stmt', 'bind_param');
         $bind_params->invokeArgs($stmt, $key_arr);
+        $affected_rows = 0;
 		foreach ($data as $row) {
 			for ($i=0; $i<$count; $i++){
 				${'p'.$i} = $row[$i];
 			}
-			if(!$stmt->execute()) {
-				$stmt->close();
-				$this->throw_exception('execute error');
-				return false;
-			}
+			$stmt->execute();
+               //throw new Exception('execute error');
+            $affected_rows += $stmt->affected_rows;
 		}
+
 		$stmt->close();
-		return $this->mysqli->affected_rows;
+		return $affected_rows;
 	}
     /**
      * 功能：向 $table 中插入一条或多条数据
@@ -437,6 +497,8 @@ class DBHelper {
      */
 	function Insert($table, $value_arr, $value_type_str, $prepare=true) {
 		$res = $this->prepare_prepare($table, $value_arr, 'insert', $prepare);
+		//debug
+		//print_r($res);
 		if ($prepare) {
 			$count = $res['count'];
 			$prepare_str = $res['prepare'];
@@ -448,7 +510,7 @@ class DBHelper {
 			return $this->mysqli->affected_rows;
 		}
 	}
-	
+
 	function Update($table, $value_arr, $value_type_str, $const=null, $filter_str=null, $prepare=true) {
 		$res = $this->prepare_prepare($table, $value_arr, 'update', $prepare);
 		$const_and_filter_str = $this->create_where_str($const, $filter_str);
