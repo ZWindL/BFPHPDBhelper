@@ -81,7 +81,7 @@ class DBHelper {
     }
 
 	// 来自 php manual 的一个方法
-	public function Prepared_query_compex($sql,$typeDef=false,$params=false){
+	public function Prepared_query_complex($sql,$typeDef=false,$params=false){
 		if($stmt = $this->mysqli->prepare($sql)){
 			if(count($params) == count($params,1)){
 				$params = array($params);
@@ -401,15 +401,14 @@ class DBHelper {
 			$this->throw_exception('prepare error');
 			return false;
 		}
+        $key_arr = array($value_type_str);
 		for ($i=0; $i<$count; $i++) {
-            //FIXME: bind_param 不能一次只绑定一个变量
-			//TODO:这里要用到反射
-			if(!$stmt->bind_param(substr($value_type_str, $i, 1), ${'p'.$i})) {
-				$stmt->close();
-				$this->throw_exception('binding error');
-				return false;
-			}
+            $key_arr[] = &${'p'.$i};
+            //NOTE: bind_param 不能一次只绑定一个变量
+			//NOTE: 所以这里要用到反射
 		}
+        $bind_params = new ReflectionMethod('mysqli_stmt', 'bind_param');
+        $bind_params->invokeArgs($stmt, $key_arr);
 		foreach ($data as $row) {
 			for ($i=0; $i<$count; $i++){
 				${'p'.$i} = $row[$i];
