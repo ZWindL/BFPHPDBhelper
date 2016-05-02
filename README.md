@@ -61,14 +61,82 @@ $arrayName = array(
 |[Select_assoc](#select_assoc)|public|同上|array|以关系型数组形式存储的结果集|
 |Query_complex|public|$query_str(string)|mysqli_result|直接查询 $query_str 得到的结果集|
 |Query_complex_assoc|public|同上|array|直接查询 $query_str 得到的关系型数组|
-|Insert|public|$table(string)<br>$value_arr(array)<br>$value_type_str(string)<br>$prepare(bool)=true|integer|受影响的行数|
+|[Insert](#insert)|public|$table(string)<br>$value_arr(array)<br>$value_type_str(string)<br>$prepare(bool)=true|integer|受影响的行数|
 |Update|public|$table(string)<br>$value_arr(array)<br>$value_type_str(string)<br>$const(array)=null<br>$filter_str(string)=null<br>$prepare(bool)=true|integer|受影响的行数|
 |Delete|public|$table(string)<br>$const(array)=null<br>$filter_str(string)=null|integer|受影响的行数|
 
 示例
 ----
 #### Select
+```php
+<?php
+$db = new DBHelper('path_to_your_json_file');
+
+$table_name = 'test';
+// $const 即为限定搜索结果的 WHERE 子句
+// 下面这个数组将被翻译成 "WHERE `name`='abc' and `age`='12'"
+// 若某个键的值为空将被翻译为 `KEY` is null
+$const = array(
+  'name' => 'abc',
+  'age' => 12,
+);
+$res = $db->Select($table, $const);
+// 若只给出 $table , 那么将返回 'SELECT * FROM `$table`' 的结果
+?>
+```
+----
+
 #### Select_assoc
+
+同 Select 一样，不过返回的是一个关系数组，可以直接用 `$res[index]['key_name']` 的方法取得值
+
+----
 #### Insert
+
+```php
+<?php
+$data = array(
+  'name' => 'abc',
+  'age' => 12,
+  'stu_num' => '10000000';
+);
+$db->Insert($table, $data, 'sis');
+// 'INSERT INTO $table(`name`,`age`,`stu_num`) VALUES('abc', 12, '10000000')'
+// 'sis' 是要插入的字段的类型 string int string
+// NOTE: 使用 prepare 的话必须要加 $value_type_str
+
+$data_without_key = array(
+  'abc',12,'10000'
+);
+$db->Insert($table, $data, 'sis');
+// 'INSERT INTO $table VALUES('abc', 12, '10000000')'
+
+$data_multi = array(
+  array(
+    'name' => 'abc',
+    'age' => 12
+  ),
+  array('cde', 17),
+  array('fde', 19)
+)
+// 'INSERT INTO $table(`name`,`age`) VALUES('abc', 12),
+//    ('cde',17),
+//    ('fde',19)'
+
+$data_multi_without_key = array(
+  array('abc', 12),
+  array('cde', 17),
+  array('fde', 19)
+);
+$db->Insert($table, $data_multi_without_key, 'si');
+// 'INSERT INTO $table VALUES('abc', 12),
+//    ('cde',17),
+//    ('fde',19)'
+
+?>
+```
+
+----
 #### Update
+----
 #### Delete

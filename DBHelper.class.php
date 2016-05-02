@@ -88,6 +88,7 @@ class DBHelper {
     /**
      * 切换数据库
      * @param $dbname
+     * @return bool
      * @throws Exception
      */
     function Change_db($dbname){
@@ -165,7 +166,6 @@ class DBHelper {
 		}
 	}
 
-    //TODO: 让 where 也支持 prepare
 	//不过好像没什么必要
     /**
      * 将数组自动转换为 where 子句
@@ -333,8 +333,11 @@ class DBHelper {
 
                     // 检测是否为多维数组
                     if($this->is_multiple_arr($arr)) {
-                        // 取第一行的 keys 并 implode
-                        $key_str = implode(',', array_keys($arr[0])).' ';
+                        if($this->is_assoc($arr[0])) {
+                            // 取第一行的 keys 并 implode
+                            $key_str = implode(',', array_keys($arr[0]));
+                            $key_str = '('.$key_str.')';
+                        }
                         // 将每个次级数组取出
                         foreach ($arr as $item)
                             $value_str .= ("VALUES('".implode("','", array_values($item)) . "'),");
@@ -404,8 +407,11 @@ class DBHelper {
                     $value_str = substr($value_str, 0, -1);
                     $value_str .= ')';
 
-                    $key_str = implode(',', array_keys($data_arr));
-                    $key_str = '('.$key_str.')';
+                    $key_str = '';
+                    if($this->is_assoc($data_arr)) {
+                        $key_str = implode(',', array_keys($data_arr));
+                        $key_str = '('.$key_str.')';
+                    }
 
                     $prepare_str .= ($key_str.$value_str);
 
