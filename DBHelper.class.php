@@ -92,7 +92,7 @@ class DBHelper {
      */
     function Change_db($dbname){
         try {
-            $this->mysqli->select_db($dbname);
+            return $this->mysqli->select_db($dbname);
         } catch (Exception $e) {
             throw $e;
         }
