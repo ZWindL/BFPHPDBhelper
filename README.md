@@ -13,6 +13,7 @@
 * [x] 支持 prepare
 * [ ] where 子句也支持 prepare，不过好像没什么必要
 * [ ] 支持 PDO
+
 ----
 
 使用说明
