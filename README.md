@@ -119,6 +119,7 @@ $data_multi = array(
   array('cde', 17),
   array('fde', 19)
 )
+$db->Insert($table, $data_multi, 'si');
 // 'INSERT INTO $table(`name`,`age`) VALUES('abc', 12),
 //    ('cde',17),
 //    ('fde',19)'
