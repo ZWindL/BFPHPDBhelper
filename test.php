@@ -11,25 +11,19 @@ $db = new DBHelper('./db_config.json');
 
 $stu = [
     [
-        'StuNo'=>'13232244',
-        'StuName'=>'gojkf2',
-        'GroupNo'=>'1',
-        'ClassNo'=>'1',
-        'Sex'=>'2',
-        'PhotoPath'=>'kdjkdf',
-        'OccupationNo'=>'3',
-        'Password'=>'djlfkdjfl'
+        'no'=>'13232244',
+        'name'=>'gojkf2',
     ],
     [
-        '1331131231','abac',2,2,1,'jalkdjf',2,'jkdsfjlas'
+        '1331131231','abac'
     ],
     [
-        '1450404044','dedc',2,3,1,'jalkdj',2,'jkdsfjlas'
+        '1450404044','dedc'
     ]
 ];
 
-echo $db->Insert('StuInfo',$stu,'ssiiisis');
-$res = $db->Select_assoc('StuInfo');
+echo $db->Insert('Students',$stu,'ss');
+$res = $db->Select_assoc('Students');
 echo '<br><pre>';
 var_dump($res);
 echo '</pre>';

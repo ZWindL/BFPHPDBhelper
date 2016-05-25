@@ -415,13 +415,13 @@ class DBHelper {
                     
                     //构造键
                     $key_str = '';
+					print_r($data_arr);
                     if($this->is_assoc($data_arr)) {
-//                        $key_str = implode(',', array_keys($data_arr));
-//                        $key_str = '('.$key_str.')';
                         $key_str = $this->create_keystr($data_arr);
                     }
 
                     $prepare_str .= ($key_str.$value_str);
+					echo $prepare_str;
 
                     return array(
                         'count'=>$count,
