@@ -179,6 +179,7 @@ class DBHelper {
             $const_str .= " WHERE ";
             $index = 0;
             foreach ($const as $key=>$value){
+				$key = "`$key`";
                 if($index > 0)
                     $const_str .= ' AND ';
                 if($value == null) {
@@ -301,6 +302,11 @@ class DBHelper {
         return count($arr) !== count($arr, COUNT_RECURSIVE);
     }
 
+	private function create_keystr($arr){
+        $key_str = '(`'.implode('`,`', array_keys($arr)).'`)';
+		return $key_str;
+	}
+
 	/**
 	 * 根据少量信息生成 prepare 语句
 	 * @param string $table 目标表的名称
@@ -323,6 +329,7 @@ class DBHelper {
 	 * @throws Exception
 	 */
     private function prepare_prepare($table, $arr, $insert_or_update, $prepare=true){
+		$table = "`$table`";
         if (!$prepare) {
             // 如果不需要 prepare 语句，则返回一个插入语句
             // 或是一个不带 where 子句的 update 语句
@@ -335,8 +342,7 @@ class DBHelper {
                     if($this->is_multiple_arr($arr)) {
                         if($this->is_assoc($arr[0])) {
                             // 取第一行的 keys 并 implode
-                            $key_str = implode(',', array_keys($arr[0]));
-                            $key_str = '('.$key_str.')';
+							$key_str = $this->create_keystr($arr[0]);
                         }
                         // 将每个次级数组取出
                         foreach ($arr as $item)
@@ -346,8 +352,8 @@ class DBHelper {
                     // 检测是否为关系数组
                     // 一维关系型数组，包含keys 和 values
                     else if($this->is_assoc($arr)) {
-                        $key_str = implode(',', array_keys($arr)).' ';
-                        $value_str = " VALUES('".implode("','", $arr)."')";
+                        $key_str = $this->create_keystr(array_keys($arr));
+                        $value_str = " VALUES('".implode("','", array_values($arr))."')";
                     }
                     // 一维关非系型数组，只有值列表
                     else {
@@ -372,7 +378,7 @@ class DBHelper {
                     }
                     $set_str = '';
                     foreach ($arr as $key => $value)
-                        $set_str .= ($key."='$value',");
+                        $set_str .= ("`$key`"."='$value',");
                     $set_str = substr($set_str, 0, -1);
                     $update_str .= $set_str;
                     //debug
@@ -388,7 +394,7 @@ class DBHelper {
 			// 使用 prepare
             switch ($insert_or_update) {
                 case 'insert':
-					// 检测是否为多维数组，如果是多维数组，包含 key 的便是第一个子数组
+					// 检测是否为多维数组，如果是多维数组，则第一个数组包含 key
                     if ($this->is_multiple_arr($arr)) {
                         $data_arr = $arr[0];
                         $return_arr = array();
@@ -406,11 +412,13 @@ class DBHelper {
                         $value_str .= '?,';
                     $value_str = substr($value_str, 0, -1);
                     $value_str .= ')';
-
+                    
+                    //构造键
                     $key_str = '';
                     if($this->is_assoc($data_arr)) {
-                        $key_str = implode(',', array_keys($data_arr));
-                        $key_str = '('.$key_str.')';
+//                        $key_str = implode(',', array_keys($data_arr));
+//                        $key_str = '('.$key_str.')';
+                        $key_str = $this->create_keystr($data_arr);
                     }
 
                     $prepare_str .= ($key_str.$value_str);
@@ -433,7 +441,7 @@ class DBHelper {
                     $set_str = ''; $count = 0; $return_arr=array();
                     foreach ($arr as $key => $value) {
                         $count ++;
-                        $set_str .= ($key.'=?,');
+                        $set_str .= ("`$key`".'=?,');
                         array_push($return_arr, $value);
                     }
                     return array(
@@ -466,6 +474,8 @@ class DBHelper {
 			$this->throw_exception('prepare error');
 			return false;
 		}
+        
+        //创建变量数组 每一个变量都是 p1,p2,p3... 的形式
         $key_arr = array($value_type_str);
 		for ($i=0; $i<$count; $i++) {
             // bind_params() 只接收引用类型
@@ -537,4 +547,11 @@ class DBHelper {
 		$this->mysqli->query($delete_str);
 		return $this->mysqli->affected_rows;
 	}
+
+    /**
+     * @return mixed 最后插入记录的 id
+     */
+    function insert_id(){
+        return $this->mysqli->insert_id;
+    }
 }
