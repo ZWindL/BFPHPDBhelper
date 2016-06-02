@@ -185,8 +185,12 @@ class DBHelper {
                 if($value == null) {
                     $const_str .= ($key . 'is NULL');
                 } else {
-                    //NOTE: 无论是否为字符串，统一加单引号，让数据库自己处理类型转换
-                    $const_str .= ($key . "='" . $value ."'");
+                    //判断键是否为数组，如果是数组则使用 in 子句
+                    if(is_array($value)){
+                        $const_str .= $key." in ('".implode("','", $value)."')";
+                    } else
+                        //NOTE: 无论是否为字符串，统一加单引号，让数据库自己处理类型转换
+                        $const_str .= ($key . "='" . $value ."'");
                 }
             }
         }
@@ -415,13 +419,13 @@ class DBHelper {
                     
                     //构造键
                     $key_str = '';
-					print_r($data_arr);
                     if($this->is_assoc($data_arr)) {
+//                        $key_str = implode(',', array_keys($data_arr));
+//                        $key_str = '('.$key_str.')';
                         $key_str = $this->create_keystr($data_arr);
                     }
 
                     $prepare_str .= ($key_str.$value_str);
-					echo $prepare_str;
 
                     return array(
                         'count'=>$count,
